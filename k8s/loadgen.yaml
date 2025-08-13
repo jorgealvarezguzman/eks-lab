@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: loadgen
+spec:
+  restartPolicy: Never
+  containers:
+    - name: loader
+      image: busybox:1.36
+      command: ["/bin/sh","-c"]
+      args:
+        - >
+          i=0; while [ $i -lt 2000 ]; do
+            wget -q -O- http://web.default.svc.cluster.local >/dev/null 2>&1 || true;
+            i=$(($i+1));
+          done; echo done; sleep 60;
