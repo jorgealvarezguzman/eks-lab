@@ -1,0 +1,45 @@
+# k8s/envoy/deploy.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: envoy-gateway
+  namespace: envoy
+  labels:
+    app: envoy-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: envoy-gateway
+  template:
+    metadata:
+      labels:
+        app: envoy-gateway
+    spec:
+      containers:
+      - name: envoy
+        image: envoyproxy/envoy:v1.29.5
+        args: ["-c","/etc/envoy/envoy.yaml","--service-cluster","envoy-gw","-l","info"]
+        ports:
+        - name: http
+          containerPort: 8080
+        - name: admin
+          containerPort: 9901
+        readinessProbe:
+          httpGet: { path: /ready, port: 9901 }
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          httpGet: { path: /ready, port: 9901 }
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        resources:
+          requests: { cpu: "100m", memory: "128Mi" }
+          limits:   { cpu: "500m", memory: "512Mi" }
+        volumeMounts:
+        - name: config
+          mountPath: /etc/envoy
+      volumes:
+      - name: config
+        configMap:
+          name: envoy-config

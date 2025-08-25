@@ -1,0 +1,17 @@
+# k8s/envoy/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: envoy-gateway
+  namespace: envoy
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+spec:
+  type: LoadBalancer
+  selector:
+    app: envoy-gateway
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+    protocol: TCP

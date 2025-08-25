@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: envoy-config
+  namespace: envoy
+data:
+  envoy.yaml: |-
+    static_resources:
+      listeners:
+      - name: listener_http
+        address:
+          socket_address:
+            address: 0.0.0.0
+            port_value: 8080
+        filter_chains:
+        - filters:
+          - name: envoy.filters.network.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              stat_prefix: ingress_http
+              route_config:
+                name: local_route
+                virtual_hosts:
+                - name: backend
+                  domains: ["*"]
+                  routes:
+                  - match: { prefix: "/" }
+                    route:
+                      cluster: web_cluster
+                      timeout: 3s
+                      retry_policy:
+                        retry_on: "5xx,reset,connect-failure"
+                        num_retries: 2
+                        per_try_timeout: 1s
+              http_filters:
+              - name: envoy.filters.http.local_ratelimit
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+                  stat_prefix: local_rate_limiter
+                  token_bucket:
+                    max_tokens: 100          # ↓ lower to make 429s obvious
+                    tokens_per_fill: 100
+                    fill_interval: 1s
+                  filter_enabled:
+                    runtime_key: local_rate_limit_enabled
+                    default_value: { numerator: 100, denominator: HUNDRED }
+                  filter_enforced:
+                    runtime_key: local_rate_limit_enforced
+                    default_value: { numerator: 100, denominator: HUNDRED }
+                  response_headers_to_add:
+                  - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                    header: { key: "x-rate-limited-by", value: "envoy-local" }
+              - name: envoy.filters.http.router
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+      clusters:
+      - name: web_cluster
+        connect_timeout: 0.25s
+        type: STRICT_DNS
+        lb_policy: ROUND_ROBIN
+        load_assignment:
+          cluster_name: web_cluster
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: web.default.svc.cluster.local
+                    port_value: 80
+        circuit_breakers:
+          thresholds:
+          - max_connections: 50
+            max_requests: 200
+            max_pending_requests: 200
+            max_retries: 3
+
+    admin:
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 9901

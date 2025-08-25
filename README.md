@@ -352,3 +352,92 @@ terraform.tfvars
 * **Optional**: S3/DynamoDB remote state (use Appendix).
 
 > Tip: Keep the canvas as the “living runbook,” and mirror stable instructions into README so GitHub stays concise.
+
+---
+
+## 13) Envoy Gateway Lab — Edge Proxy, Rate Limiting & HPA
+
+Use **Envoy** as a simple edge proxy in front of the `web` service to learn routing, retries, circuit breaking, and rate limiting. This adds a `LoadBalancer` Service (NLB) and an HPA for Envoy.
+
+### What you’ll learn
+
+* Route external traffic through Envoy → `web` Service
+* Apply **local rate-limiting** (429s under bursts) and **retries/circuit breaking**
+* Autoscale Envoy via **HPA**; see **Cluster Autoscaler** add nodes if needed
+
+### File layout (new)
+
+```
+./k8s/envoy/
+  ├─ namespace.yaml
+  ├─ configmap.yaml       # Envoy static config
+  ├─ deploy.yaml          # Envoy Deployment
+  ├─ service.yaml         # NLB Service
+  └─ hpa.yaml             # HPA for Envoy
+```
+
+### Apply & test
+
+```bash
+# apply
+kubectl apply -f k8s/envoy/namespace.yaml
+kubectl apply -f k8s/envoy/configmap.yaml
+kubectl apply -f k8s/envoy/deploy.yaml
+kubectl apply -f k8s/envoy/service.yaml
+kubectl apply -f k8s/envoy/hpa.yaml
+
+# get external endpoint and test
+LB=$(kubectl get svc -n envoy envoy-gateway -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+curl -I http://$LB/
+
+# burst to trigger 429s (rate limit is 5 rps per Envoy pod)
+seq 60 | xargs -n1 -P20 -I{} curl -s -o /dev/null -w "%{http_code}
+" http://$LB/ | sort | uniq -c
+
+# inspect Envoy admin (optional)
+kubectl -n envoy port-forward deploy/envoy-gateway 9901:9901 &
+curl -s localhost:9901/stats/prometheus | grep -E 'local_rate|upstream_rq_[0-9]{3}'
+```
+
+### Drive Envoy HPA
+
+```bash
+# temporary: relax limiter if needed (increase tokens in configmap), then rollout restart
+kubectl -n envoy rollout restart deploy/envoy-gateway
+
+# generate load from inside the cluster
+kubectl apply -f - <<'YAML'
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: envoy-load
+  namespace: envoy
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: fortio
+        image: fortio/fortio:latest_release
+        args: ["load","-c","40","-qps","0","-t","5m","http://envoy-gateway.envoy.svc.cluster.local/"]
+YAML
+
+kubectl get hpa -n envoy -w
+kubectl -n envoy get deploy envoy-gateway -w
+kubectl top pods -n envoy
+```
+
+### Troubleshooting
+
+* **503 from Envoy** → `kubectl get endpoints web`; ensure `web` Service exists and a `web` pod is `READY 1/1`.
+* **Envoy CrashLoopBackOff** → ensure **router filter is last** in `http_filters`.
+* **HPA shows `<unknown>`** → make sure `metrics-server` is running and Envoy has CPU **requests**.
+* **Rate limit not triggering** → set `replicas: 1` or lower tokens; remember the bucket is per Envoy pod.
+
+### Cleanup
+
+```bash
+kubectl delete ns envoy
+# (or individually delete the Job/HPA/Service/Deploy/ConfigMap)
+```
