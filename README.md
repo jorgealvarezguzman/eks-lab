@@ -441,3 +441,121 @@ kubectl top pods -n envoy
 kubectl delete ns envoy
 # (or individually delete the Job/HPA/Service/Deploy/ConfigMap)
 ```
+
+---
+
+## 14) Lab A — Amazon MSK (Kafka) with EKS Producer/Consumer
+
+### What you’ll learn
+
+* Provision a secure **Amazon MSK** cluster in the same VPC as EKS.
+* Authenticate with **SASL/SCRAM** over TLS from Kubernetes pods.
+* Create a Kafka **topic**, **produce** messages, and **consume** them from EKS.
+
+### Prereqs / assumptions
+
+* You’ve already deployed the base EKS/VPC from this lab.
+* Terraform code for MSK is added (e.g., `msk.tf`) and includes:
+
+  * **3-broker** MSK cluster (any instance type; example uses `kafka.m5.large`).
+  * **Security Group** allowing broker port from the **EKS node SG**.
+  * A **Secrets Manager** secret that starts with `AmazonMSK_` and is encrypted with a **customer-managed KMS key (CMK)**.
+  * SCRAM association wired to the MSK cluster.
+* Variables:
+
+  * `kafka_scram_password` set in `terraform.tfvars` (any strong string).
+
+> **Ports recap**
+>
+> * `9096`: SASL/SCRAM over TLS (used in this lab)
+> * `9094`: TLS (no SASL)
+> * `9098`: IAM auth (not used here)
+
+### Files (you commit these)
+
+```
+terraform/
+  msk.tf                          # MSK cluster, SG rule, KMS key, secret, SCRAM assoc
+
+k8s/msk/
+  secret.yaml                     # username/password for SCRAM
+  configmap.yaml                  # bootstrap servers
+  topic-job.yaml                  # creates topic 'demo'
+  producer-job.yaml               # sends messages to 'demo'
+  consumer-pod.yaml               # reads messages from 'demo'
+```
+
+### Step 1 — Provision MSK
+
+```bash
+terraform apply
+```
+
+After apply:
+
+```bash
+terraform output -raw msk_bootstrap_sasl
+# copy this value into k8s/msk/configmap.yaml (bootstrap) before applying k8s manifests
+```
+
+### Step 2 — Deploy client bits on EKS
+
+Apply the Kubernetes manifests in order:
+
+```bash
+kubectl apply -f k8s/msk/secret.yaml
+kubectl apply -f k8s/msk/configmap.yaml
+kubectl apply -f k8s/msk/topic-job.yaml
+kubectl logs job/kafka-create-topic
+```
+
+You should see the topic creation succeed (or “already exists”).
+
+### Step 3 — Produce & consume
+
+```bash
+kubectl apply -f k8s/msk/producer-job.yaml
+kubectl logs job/kafka-produce
+
+kubectl apply -f k8s/msk/consumer-pod.yaml
+kubectl logs pod/kcat-consumer
+```
+
+You should see the produced messages in the consumer logs.
+
+### Troubleshooting
+
+* **Secret association error** like *“encrypted with the default key”*: your SCRAM secret must use a **CMK** (not the default AWS-managed key). Recreate the secret using your KMS key and re-associate.
+* **Auth failures** from clients: confirm the **bootstrap** string ends with `:9096`, and the **username/password** in the k8s Secret match the Secrets Manager value.
+* **Connectivity timeouts**: ensure the brokers’ **Security Group** allows TCP **9096** **from the EKS node SG** (not from 0.0.0.0/0), and that you’re using **private subnets** reachable by the nodes.
+* **Job immutability** errors when you change images/commands: delete the Job and re-apply (`kubectl delete job … && kubectl apply -f …`) or use `kubectl replace --force`.
+* **Kubeconfig stale** (NXDOMAIN on EKS endpoint): re-run `aws eks update-kubeconfig …` or rebuild kubeconfig as in the base lab.
+
+### Observability (optional)
+
+* **MSK**: enable enhanced monitoring and/or broker logs to CloudWatch (if included in your Terraform).
+* **Clients**: view k8s Job/Pod logs for the topic creation, producer, and consumer.
+
+### Cleanup
+
+```bash
+# Kubernetes
+kubectl delete -f k8s/msk/consumer-pod.yaml --ignore-not-found
+kubectl delete -f k8s/msk/producer-job.yaml --ignore-not-found
+kubectl delete -f k8s/msk/topic-job.yaml --ignore-not-found
+kubectl delete -f k8s/msk/secret.yaml -f k8s/msk/configmap.yaml --ignore-not-found
+
+# Terraform (only if you want to remove MSK)
+terraform destroy -target=aws_msk_scram_secret_association.scram \
+                  -target=aws_msk_cluster.this \
+                  -target=aws_secretsmanager_secret.* \
+                  -target=aws_kms_key.msk_scram \
+                  -auto-approve
+```
+
+### Costs
+
+* MSK brokers run 24/7; **3× brokers** plus storage will incur cost.
+* This lab does **not** use MSK Connect or extra NAT/LB resources beyond your base cluster.
+
+> Next step (Lab B idea): use **MSK Connect S3 Sink** to land topic data in S3 and read it with **Databricks**.

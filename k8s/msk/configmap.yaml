@@ -1,0 +1,6 @@
+# k8s/msk/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: msk-config }
+data:
+  bootstrap: "b-1.ekslabmsk.g4j1py.c23.kafka.us-east-1.amazonaws.com:9096,b-2.ekslabmsk.g4j1py.c23.kafka.us-east-1.amazonaws.com:9096,b-3.ekslabmsk.g4j1py.c23.kafka.us-east-1.amazonaws.com:9096"  # comma-separated b-*.amazonaws.com:9096

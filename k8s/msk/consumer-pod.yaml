@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kcat-consumer
+spec:
+  restartPolicy: Never
+  containers:
+  - name: kcat
+    image: edenhill/kcat:1.7.1
+    command: ["/bin/sh","-c"]
+    args:
+      - |
+        kcat -C -b "$BOOT" -t demo -o beginning -q \
+          -X security.protocol=SASL_SSL \
+          -X sasl.mechanisms=SCRAM-SHA-512 \
+          -X sasl.username="$KAFKA_USERNAME" \
+          -X sasl.password="$KAFKA_PASSWORD"
+    env:
+    - name: BOOT
+      valueFrom:
+        configMapKeyRef: { name: msk-config, key: bootstrap }
+    - name: KAFKA_USERNAME
+      valueFrom:
+        secretKeyRef: { name: msk-scram, key: username }
+    - name: KAFKA_PASSWORD
+      valueFrom:
+        secretKeyRef: { name: msk-scram, key: password }

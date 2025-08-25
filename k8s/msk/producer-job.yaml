@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-produce
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: kcat-producer
+        image: edenhill/kcat:1.7.1
+        command: ["/bin/sh","-c"]
+        args:
+          - |
+            MSG="hello from EKS $(date -Is)"
+            echo "$MSG" | kcat -P -b "$BOOT" -t demo \
+              -X security.protocol=SASL_SSL \
+              -X sasl.mechanisms=SCRAM-SHA-512 \
+              -X sasl.username="$KAFKA_USERNAME" \
+              -X sasl.password="$KAFKA_PASSWORD"
+            echo "sent: $MSG"
+        env:
+        - name: BOOT
+          valueFrom:
+            configMapKeyRef: { name: msk-config, key: bootstrap }
+        - name: KAFKA_USERNAME
+          valueFrom:
+            secretKeyRef: { name: msk-scram, key: username }
+        - name: KAFKA_PASSWORD
+          valueFrom:
+            secretKeyRef: { name: msk-scram, key: password }

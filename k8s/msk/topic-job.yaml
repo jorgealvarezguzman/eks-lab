@@ -1,0 +1,42 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-create-topic
+  namespace: default
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: create-topic
+        image: confluentinc/cp-kafka:7.6.1
+        command: ["/bin/bash","-lc"]
+        args:
+          - |
+            # build client.properties using our explicit env vars
+            printf 'security.protocol=SASL_SSL\n'                    >  /tmp/client.properties
+            printf 'sasl.mechanism=SCRAM-SHA-512\n'                  >> /tmp/client.properties
+            printf 'sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="%s" password="%s";\n' "$KAFKA_USERNAME" "$KAFKA_PASSWORD" >> /tmp/client.properties
+
+            # (optional) echo the username being used, but NOT the password
+            echo "Using username: $KAFKA_USERNAME"
+            grep -E 'sasl.mechanism|security.protocol' /tmp/client.properties
+
+            /usr/bin/kafka-topics \
+              --bootstrap-server "$BOOT" \
+              --create --if-not-exists \
+              --topic demo \
+              --replication-factor 3 \
+              --partitions 3 \
+              --command-config /tmp/client.properties
+        env:
+        - name: BOOT
+          valueFrom:
+            configMapKeyRef: { name: msk-config, key: bootstrap }
+        - name: KAFKA_USERNAME
+          valueFrom:
+            secretKeyRef: { name: msk-scram, key: username }
+        - name: KAFKA_PASSWORD
+          valueFrom:
+            secretKeyRef: { name: msk-scram, key: password }
