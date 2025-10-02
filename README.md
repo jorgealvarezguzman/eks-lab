@@ -257,7 +257,6 @@ terraform destroy -auto-approve
 * **Ping** uses **ICMP**; **telnet** is **TCP** only (no UDP).
 * **Kubernetes core components**: API server, etcd, controller manager, scheduler; node agents: kubelet, kube-proxy; cluster add-ons include CoreDNS, CNI.
 * **systemd PID** of the init process: **1**.
-* **Four HTTP methods** (examples): GET, POST, PUT, DELETE (others: PATCH, HEAD, OPTIONS).
 * **Minimum etcd instances (prod)**: **3** for quorum.
 * **AWS data persistent after instance deletion**: **EBS** (if volume not deleted on termination) and **EBS snapshots** (S3-backed).
 * **Common DNS record types**: A, AAAA, CNAME, MX, TXT, NS, SRV, PTR.
