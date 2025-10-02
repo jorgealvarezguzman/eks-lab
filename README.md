@@ -251,19 +251,7 @@ terraform destroy -auto-approve
 
 ---
 
-## 11) Interview review cheat sheet (quick hits)
-
-* **CAP theorem**: in a partition, you must choose **Consistency or Availability**; distributed systems can only provide two of **C**, **A**, **P** at once (P assumed during partition).
-* **Ping** uses **ICMP**; **telnet** is **TCP** only (no UDP).
-* **Kubernetes core components**: API server, etcd, controller manager, scheduler; node agents: kubelet, kube-proxy; cluster add-ons include CoreDNS, CNI.
-* **systemd PID** of the init process: **1**.
-* **Minimum etcd instances (prod)**: **3** for quorum.
-* **AWS data persistent after instance deletion**: **EBS** (if volume not deleted on termination) and **EBS snapshots** (S3-backed).
-* **Common DNS record types**: A, AAAA, CNAME, MX, TXT, NS, SRV, PTR.
-
----
-
-## 12) Troubleshooting notes
+## 11) Troubleshooting notes
 
 * If the `helm`/`kubernetes` providers fail on first apply, run `terraform apply` again after the EKS API becomes reachable.
 * Ensure your IAM entity has permissions for EKS, IAM, VPC, and to read OIDC provider.
